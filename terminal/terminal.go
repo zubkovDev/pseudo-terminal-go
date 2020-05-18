@@ -28,7 +28,7 @@ func min(i, j int) int {
 // historyIdxValue returns an index into a valid range of history
 func historyIdxValue(idx int, history [][]byte) int {
 	out := idx
-	out = min(len(history), out)
+	out = min(len(history)-1, out)
 	out = max(0, out)
 	return out
 }
@@ -135,6 +135,9 @@ const (
 	KeyDown
 	KeyAltLeft
 	KeyAltRight
+	KeyDelete
+	KeyAltDelete
+	KeyAltBackspace
 )
 
 // bytesToKey tries to parse a key sequence from b. If successful, it returns
@@ -148,6 +151,19 @@ func bytesToKey(b []byte) (int, []byte) {
 		return int(b[0]), b[1:]
 	}
 
+	if len(b) >= 6 && b[0] == KeyEscape && b[1] == '[' {
+		if b[2] == '1' && b[3] == ';' && b[4] == '3' {
+			switch b[5] {
+			case 'C':
+				return KeyAltRight, b[6:]
+			case 'D':
+				return KeyAltLeft, b[6:]
+			}
+		} else if b[2] == '3' && b[3] == ';' && b[4] == '3' && b[5] == '~' {
+			return KeyAltDelete, b[6:]
+		}
+	}
+
 	if len(b) >= 3 && b[0] == KeyEscape && b[1] == '[' {
 		switch b[2] {
 		case 'A':
@@ -158,20 +174,18 @@ func bytesToKey(b []byte) (int, []byte) {
 			return KeyRight, b[3:]
 		case 'D':
 			return KeyLeft, b[3:]
+		case '3':
+			if len(b) >= 4 {
+				if b[3] == '~' {
+					return KeyDelete, b[4:]
+				}
+			}
 		}
 	}
 
-	if len(b) >= 6 &&
-		b[0] == KeyEscape &&
-		b[1] == '[' &&
-		b[2] == '1' &&
-		b[3] == ';' &&
-		b[4] == '3' {
-		switch b[5] {
-		case 'C':
-			return KeyAltRight, b[6:]
-		case 'D':
-			return KeyAltLeft, b[6:]
+	if len(b) >= 2 {
+		if b[0] == KeyEscape && b[1] == KeyBackspace {
+			return KeyAltBackspace, b[2:]
 		}
 	}
 
@@ -292,6 +306,39 @@ func (t *Terminal) handleKey(key int) (line string, ok bool) {
 		}
 		t.queue(eraseUnderCursor)
 		t.moveCursorToPos(t.pos)
+	case KeyAltBackspace:
+		if t.pos == 0 {
+			return
+		}
+		currPos := t.pos
+		t.pos = 0
+		t.moveCursorToPos(t.pos)
+
+		copy(t.line[t.pos:], t.line[currPos:])
+		t.line = t.line[:len(t.line)-currPos]
+		t.clearLineToRight()
+		if t.echo {
+			t.writeLine(t.line[t.pos:])
+		}
+		t.moveCursorToPos(t.pos)
+	case KeyDelete:
+		if t.pos == len(t.line) {
+			return
+		}
+		copy(t.line[t.pos:], t.line[1+t.pos:])
+		t.line = t.line[:len(t.line)-1]
+		t.clearLineToRight()
+		if t.echo {
+			t.writeLine(t.line[t.pos:])
+		}
+		t.moveCursorToPos(t.pos)
+	case KeyAltDelete:
+		if t.pos == len(t.line) {
+			return
+		}
+		t.line = t.line[:t.pos]
+		t.clearLineToRight()
+		t.moveCursorToPos(t.pos)
 	case KeyAltLeft:
 		// move left by a word.
 		if t.pos == 0 {
@@ -401,7 +448,9 @@ func (t *Terminal) handleKey(key int) (line string, ok bool) {
 		t.cursorX = 0
 		t.cursorY = 0
 		t.maxLine = 0
-		t.historyIdx = len(t.history) + 1
+		if line != "" {
+			t.historyIdx = len(t.history) + 1
+		}
 	case KeyCtrlD:
 		// add 'exit' to the end of the line
 		ok = true
@@ -640,7 +689,7 @@ func (t *Terminal) readLine() (line string, err error) {
 		t.c.Write(t.outBuf)
 		t.outBuf = t.outBuf[:0]
 		if lineOk {
-			if t.echo { //&& len(line) > 0 {
+			if t.echo && len(line) > 0 {
 				// don't put passwords into history...
 				b := []byte(line)
 				h := make([]byte, len(b))

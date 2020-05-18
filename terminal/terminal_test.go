@@ -86,6 +86,21 @@ var keyPressTests = []struct {
 		"b",
 		nil,
 	},
+	{
+		"abc\x1b\177de\r", // alt backspace
+		"de",
+		nil,
+	},
+	{
+		"abcd\x1b[D\x1b[D\x1b[3~\r", // (left, left) delete
+		"abd",
+		nil,
+	},
+	{
+		"abcde\x1b[D\x1b[D\x1b[D\x1b[3;3~\r", // (left, left, left) alt delete
+		"ab",
+		nil,
+	},
 }
 
 func TestKeyPresses(t *testing.T) {
