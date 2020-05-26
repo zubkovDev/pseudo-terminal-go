@@ -28,7 +28,7 @@ func min(i, j int) int {
 // historyIdxValue returns an index into a valid range of history
 func historyIdxValue(idx int, history [][]byte) int {
 	out := idx
-	out = min(len(history)-1, out)
+	out = min(len(history), out)
 	out = max(0, out)
 	return out
 }
@@ -138,6 +138,7 @@ const (
 	KeyDelete
 	KeyAltDelete
 	KeyAltBackspace
+	KeyCtrlDelete
 )
 
 // bytesToKey tries to parse a key sequence from b. If successful, it returns
@@ -161,6 +162,8 @@ func bytesToKey(b []byte) (int, []byte) {
 			}
 		} else if b[2] == '3' && b[3] == ';' && b[4] == '3' && b[5] == '~' {
 			return KeyAltDelete, b[6:]
+		} else if b[2] == '3' && b[3] == ';' && b[4] == '5' && b[5] == '~' {
+			return KeyCtrlDelete, b[6:]
 		}
 	}
 
@@ -332,7 +335,7 @@ func (t *Terminal) handleKey(key int) (line string, ok bool) {
 			t.writeLine(t.line[t.pos:])
 		}
 		t.moveCursorToPos(t.pos)
-	case KeyAltDelete:
+	case KeyAltDelete, KeyCtrlDelete:
 		if t.pos == len(t.line) {
 			return
 		}
@@ -450,6 +453,8 @@ func (t *Terminal) handleKey(key int) (line string, ok bool) {
 		t.maxLine = 0
 		if line != "" {
 			t.historyIdx = len(t.history) + 1
+		} else {
+			t.historyIdx = len(t.history)
 		}
 	case KeyCtrlD:
 		// add 'exit' to the end of the line
